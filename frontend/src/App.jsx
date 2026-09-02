@@ -15,8 +15,8 @@ function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
-        <RefreshCw className="w-8 h-8 animate-spin text-indigo-500" />
+      <div className="min-h-screen bg-[#070b14] flex items-center justify-center text-slate-400">
+        <RefreshCw className="w-8 h-8 animate-spin text-cyan-400" />
       </div>
     );
   }
@@ -31,7 +31,7 @@ function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-ambient-glow text-slate-100 flex flex-col selection:bg-cyan-500 selection:text-black">
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'inventory' && <InventoryPage />}
@@ -46,8 +46,8 @@ function Dashboard() {
         )}
         {activeTab === 'orders' && <CustomerOrdersPage />}
       </main>
-      <footer className="border-t border-slate-900 bg-slate-950/60 py-4 text-center text-xs text-slate-500">
-        Mini Operations ERP · Production Full-Stack Architecture · FastAPI + React + SQLAlchemy
+      <footer className="border-t border-slate-800/80 bg-[#070b14]/80 backdrop-blur-md py-4 text-center text-xs text-slate-500">
+        Mini Operations ERP · Production Architecture · Built with FastAPI, SQLAlchemy 2.0 & React 18
       </footer>
     </div>
   );
