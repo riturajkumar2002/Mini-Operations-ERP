@@ -19,6 +19,7 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
   const [transfers, setTransfers] = useState([]);
   const [locations, setLocations] = useState([]);
   const [items, setItems] = useState([]);
+  const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Modal
@@ -27,8 +28,8 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
     source_location_id: '',
     destination_location_id: '',
     item_id: '',
-    batch_number: 'DEFAULT',
-    quantity: 40,
+    batch_number: '',
+    quantity: 20,
   });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -37,14 +38,16 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [trRes, locRes, itemRes] = await Promise.all([
+      const [trRes, locRes, itemRes, invRes] = await Promise.all([
         api.get('/transfers'),
         api.get('/locations'),
         api.get('/items'),
+        api.get('/inventory'),
       ]);
       setTransfers(trRes.data);
       setLocations(locRes.data);
       setItems(itemRes.data);
+      setInventory(invRes.data);
     } catch (err) {
       console.error('Failed to load transfers:', err);
     } finally {
@@ -56,6 +59,34 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
     fetchData();
   }, []);
 
+  // Filter batches available at selected source location for the chosen item
+  const availableBatches = inventory.filter(
+    (inv) =>
+      inv.location_id === Number(form.source_location_id) &&
+      inv.item_id === Number(form.item_id) &&
+      inv.available_quantity > 0
+  );
+
+  // Auto-select first valid batch when source facility or item changes
+  useEffect(() => {
+    if (form.source_location_id && form.item_id && inventory.length > 0) {
+      const matching = inventory.filter(
+        (inv) =>
+          inv.location_id === Number(form.source_location_id) &&
+          inv.item_id === Number(form.item_id) &&
+          inv.available_quantity > 0
+      );
+      if (matching.length > 0) {
+        if (!matching.some((m) => m.batch_number === form.batch_number)) {
+          setForm((prev) => ({ ...prev, batch_number: matching[0].batch_number }));
+        }
+      } else {
+        setForm((prev) => ({ ...prev, batch_number: '' }));
+      }
+    }
+  }, [form.source_location_id, form.item_id, inventory]);
+
+  // Handle prefill from Work Orders shortage trigger
   useEffect(() => {
     if (prefillData && locations.length && items.length) {
       setForm({
@@ -70,16 +101,49 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
     }
   }, [prefillData, locations, items]);
 
+  const handleOpenModal = () => {
+    if (locations.length >= 2 && items.length) {
+      // Default to WH-02 as source and WH-01 as dest
+      const defaultSource = locations[1]?.id || locations[0]?.id;
+      const defaultDest = locations[0]?.id;
+      const defaultItem = items[0]?.id;
+
+      // Find if any batch exists
+      const match = inventory.find(
+        (inv) =>
+          inv.location_id === defaultSource &&
+          inv.item_id === defaultItem &&
+          inv.available_quantity > 0
+      );
+
+      setForm({
+        source_location_id: String(defaultSource),
+        destination_location_id: String(defaultDest),
+        item_id: String(defaultItem),
+        batch_number: match ? match.batch_number : '',
+        quantity: 20,
+      });
+    }
+    setError('');
+    setIsOpen(true);
+  };
+
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!form.batch_number) {
+      setError('Please select or specify a valid batch with available inventory at the source facility.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await api.post('/transfers', {
         source_location_id: Number(form.source_location_id),
         destination_location_id: Number(form.destination_location_id),
         item_id: Number(form.item_id),
-        batch_number: form.batch_number.trim() || 'DEFAULT',
+        batch_number: form.batch_number.trim(),
         quantity: Number(form.quantity),
       });
       setIsOpen(false);
@@ -110,6 +174,14 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
       setActionError(err.response?.data?.detail || 'Failed to receive transfer');
     }
   };
+
+  // Selected batch record for live availability preview
+  const selectedBatchRecord = inventory.find(
+    (inv) =>
+      inv.location_id === Number(form.source_location_id) &&
+      inv.item_id === Number(form.item_id) &&
+      inv.batch_number === form.batch_number
+  );
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -157,19 +229,7 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
         <div className="flex items-center gap-2.5">
           {canManageTransfers && (
             <button
-              onClick={() => {
-                if (locations.length >= 2 && items.length) {
-                  setForm({
-                    source_location_id: locations[1].id,
-                    destination_location_id: locations[0].id,
-                    item_id: items[0].id,
-                    batch_number: 'BATCH-CH-002',
-                    quantity: 40,
-                  });
-                }
-                setError('');
-                setIsOpen(true);
-              }}
+              onClick={handleOpenModal}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-sm font-bold shadow-lg shadow-cyan-500/20 border border-cyan-300/30 transition-all"
             >
               <PlusCircle className="w-4 h-4" />
@@ -342,8 +402,8 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
                 >
                   <option value="">Select destination facility</option>
                   {locations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name} ({l.code})
+                    <option key={l.id} value={l.id} disabled={Number(l.id) === Number(form.source_location_id)}>
+                      {l.name} ({l.code}) {Number(l.id) === Number(form.source_location_id) ? '(Source)' : ''}
                     </option>
                   ))}
                 </select>
@@ -357,6 +417,7 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
                   required
                   className="w-full bg-slate-50 dark:bg-[#070b14] border border-slate-300 dark:border-slate-700/80 rounded-xl px-3.5 py-2.5 text-slate-900 dark:text-white text-sm focus:outline-none focus:border-cyan-500"
                 >
+                  <option value="">Select item</option>
                   {items.map((i) => (
                     <option key={i.id} value={i.id}>
                       {i.name} ({i.sku})
@@ -365,16 +426,30 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
                 </select>
               </div>
 
+              {/* Dynamic Batch Selector based on actual inventory at source location */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Batch Number</label>
-                  <input
-                    type="text"
-                    required
-                    value={form.batch_number}
-                    onChange={(e) => setForm({ ...form, batch_number: e.target.value })}
-                    className="w-full bg-slate-50 dark:bg-[#070b14] border border-slate-300 dark:border-slate-700/80 rounded-xl px-3.5 py-2.5 text-slate-900 dark:text-white text-sm font-mono focus:outline-none focus:border-cyan-500"
-                  />
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Available Batch
+                  </label>
+                  {availableBatches.length > 0 ? (
+                    <select
+                      value={form.batch_number}
+                      onChange={(e) => setForm({ ...form, batch_number: e.target.value })}
+                      required
+                      className="w-full bg-slate-50 dark:bg-[#070b14] border border-slate-300 dark:border-slate-700/80 rounded-xl px-3 py-2.5 text-slate-900 dark:text-white text-xs font-mono focus:outline-none focus:border-cyan-500"
+                    >
+                      {availableBatches.map((b) => (
+                        <option key={b.id} value={b.batch_number}>
+                          {b.batch_number} ({b.available_quantity} avail)
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="text-[11px] p-2 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-300">
+                      No stock at source
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -390,6 +465,22 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
                 </div>
               </div>
 
+              {/* Real-time Available Stock Preview Indicator */}
+              {selectedBatchRecord && (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#070b14] border border-slate-200 dark:border-slate-800 text-xs flex items-center justify-between shadow-inner">
+                  <span className="text-slate-600 dark:text-slate-400">Available in this Batch:</span>
+                  <span
+                    className={`font-mono font-bold px-2.5 py-0.5 rounded-md ${
+                      selectedBatchRecord.available_quantity >= Number(form.quantity)
+                        ? 'text-emerald-700 bg-emerald-50 border border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-800/40'
+                        : 'text-rose-700 bg-rose-50 border border-rose-200 dark:text-rose-300 dark:bg-rose-950/40 dark:border-rose-800/40'
+                    }`}
+                  >
+                    {selectedBatchRecord.available_quantity} units available
+                  </span>
+                </div>
+              )}
+
               <div className="pt-4 flex justify-end gap-2.5 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
@@ -400,7 +491,7 @@ export default function TransfersPage({ prefillData, onClearPrefill }) {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || availableBatches.length === 0}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-cyan-500/25 disabled:opacity-50"
                 >
                   {submitting ? 'Creating...' : 'Request Transfer'}

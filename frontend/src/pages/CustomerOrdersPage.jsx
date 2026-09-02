@@ -25,8 +25,8 @@ export default function CustomerOrdersPage() {
     customer_name: 'Stark Manufacturing Industries',
     location_id: '',
     item_id: '',
-    batch_number: 'BATCH-ST-001',
-    quantity: 60,
+    batch_number: '',
+    quantity: 20,
   });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -55,8 +55,57 @@ export default function CustomerOrdersPage() {
     fetchData();
   }, []);
 
+  // Filter available batches for selected location & item
+  const availableBatches = inventory.filter(
+    (inv) =>
+      inv.location_id === Number(form.location_id) &&
+      inv.item_id === Number(form.item_id) &&
+      inv.available_quantity > 0
+  );
+
+  // Auto-select first matching batch when location or item changes
+  useEffect(() => {
+    if (form.location_id && form.item_id && inventory.length > 0) {
+      const matching = inventory.filter(
+        (inv) =>
+          inv.location_id === Number(form.location_id) &&
+          inv.item_id === Number(form.item_id) &&
+          inv.available_quantity > 0
+      );
+      if (matching.length > 0) {
+        if (!matching.some((m) => m.batch_number === form.batch_number)) {
+          setForm((prev) => ({ ...prev, batch_number: matching[0].batch_number }));
+        }
+      } else {
+        setForm((prev) => ({ ...prev, batch_number: '' }));
+      }
+    }
+  }, [form.location_id, form.item_id, inventory]);
+
+  const handleOpenModal = () => {
+    if (locations.length && items.length) {
+      const defaultLoc = locations[0]?.id;
+      const defaultItem = items[0]?.id;
+      const match = inventory.find(
+        (inv) =>
+          inv.location_id === defaultLoc &&
+          inv.item_id === defaultItem &&
+          inv.available_quantity > 0
+      );
+      setForm({
+        customer_name: 'Apex Industrial Dynamics',
+        location_id: String(defaultLoc),
+        item_id: String(defaultItem),
+        batch_number: match ? match.batch_number : '',
+        quantity: 20,
+      });
+    }
+    setError('');
+    setIsOpen(true);
+  };
+
   const getAvailableStockInForm = () => {
-    if (!form.item_id || !form.location_id) return null;
+    if (!form.item_id || !form.location_id || !form.batch_number) return null;
     const match = inventory.find(
       (inv) =>
         inv.item_id === Number(form.item_id) &&
@@ -69,13 +118,19 @@ export default function CustomerOrdersPage() {
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!form.batch_number) {
+      setError('Please select a valid batch with available stock at this facility.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await api.post('/orders', {
         customer_name: form.customer_name.trim(),
         location_id: Number(form.location_id),
         item_id: Number(form.item_id),
-        batch_number: form.batch_number.trim() || 'DEFAULT',
+        batch_number: form.batch_number.trim(),
         quantity: Number(form.quantity),
       });
       setIsOpen(false);
@@ -120,19 +175,7 @@ export default function CustomerOrdersPage() {
         <div className="flex items-center gap-2.5">
           {canCreateOrder && (
             <button
-              onClick={() => {
-                if (locations.length && items.length) {
-                  setForm({
-                    customer_name: 'Apex Industrial Dynamics',
-                    location_id: locations[0].id,
-                    item_id: items[0].id,
-                    batch_number: 'BATCH-ST-001',
-                    quantity: 60,
-                  });
-                }
-                setError('');
-                setIsOpen(true);
-              }}
+              onClick={handleOpenModal}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-sm font-bold shadow-lg shadow-cyan-500/20 border border-cyan-300/30 transition-all"
             >
               <PlusCircle className="w-4 h-4" />
@@ -300,16 +343,30 @@ export default function CustomerOrdersPage() {
                 </select>
               </div>
 
+              {/* Dynamic Batch Selector based on actual inventory at facility */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Batch Number</label>
-                  <input
-                    type="text"
-                    required
-                    value={form.batch_number}
-                    onChange={(e) => setForm({ ...form, batch_number: e.target.value })}
-                    className="w-full bg-slate-50 dark:bg-[#070b14] border border-slate-300 dark:border-slate-700/80 rounded-xl px-3.5 py-2.5 text-slate-900 dark:text-white text-sm font-mono focus:outline-none focus:border-cyan-500"
-                  />
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Available Batch
+                  </label>
+                  {availableBatches.length > 0 ? (
+                    <select
+                      value={form.batch_number}
+                      onChange={(e) => setForm({ ...form, batch_number: e.target.value })}
+                      required
+                      className="w-full bg-slate-50 dark:bg-[#070b14] border border-slate-300 dark:border-slate-700/80 rounded-xl px-3 py-2.5 text-slate-900 dark:text-white text-xs font-mono focus:outline-none focus:border-cyan-500"
+                    >
+                      {availableBatches.map((b) => (
+                        <option key={b.id} value={b.batch_number}>
+                          {b.batch_number} ({b.available_quantity} avail)
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="text-[11px] p-2 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-300">
+                      No stock at facility
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -328,7 +385,7 @@ export default function CustomerOrdersPage() {
               {/* Real-time Available Stock Preview Indicator */}
               {formAvailableStock !== null && (
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#070b14] border border-slate-200 dark:border-slate-800 text-xs flex items-center justify-between shadow-inner">
-                  <span className="text-slate-600 dark:text-slate-400">Available Stock in Batch/Facility:</span>
+                  <span className="text-slate-600 dark:text-slate-400">Available in this Batch:</span>
                   <span
                     className={`font-mono font-bold px-2.5 py-0.5 rounded-md ${
                       formAvailableStock >= Number(form.quantity)
@@ -336,7 +393,7 @@ export default function CustomerOrdersPage() {
                         : 'text-rose-700 bg-rose-50 border border-rose-200 dark:text-rose-300 dark:bg-rose-950/40 dark:border-rose-800/40'
                     }`}
                   >
-                    {formAvailableStock} units
+                    {formAvailableStock} units available
                   </span>
                 </div>
               )}
@@ -351,7 +408,7 @@ export default function CustomerOrdersPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || availableBatches.length === 0}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-cyan-500/25 disabled:opacity-50"
                 >
                   {submitting ? 'Reserving...' : 'Place Order & Reserve'}
