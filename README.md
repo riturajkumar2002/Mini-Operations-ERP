@@ -50,7 +50,7 @@ The system orchestrates multi-warehouse operations:
 | **Relational Database** | **SQLite (WAL mode)** / **PostgreSQL** | Portable, zero-daemon SQLite by default with complete PostgreSQL compatibility via `DATABASE_URL` |
 | **Authentication** | **JWT (OAuth2) + Bcrypt** | Secure password hashing, HS256 signed tokens, role-based backend authorization dependencies |
 | **Frontend Framework**| **React 18 + Vite** | Lightning-fast build tool, component-driven UI |
-| **Styling & UI** | **Tailwind CSS + Lucide React** | Modern dark-mode aesthetic, responsive layouts, intuitive status indicators |
+| **Styling & UI** | **Tailwind CSS + Lucide React** | Dual Theme Support (Light & Ambient Obsidian Dark mode) with instant 1-click toggle, responsive layouts, intuitive status indicators |
 | **Testing** | **Pytest + HTTPX** | In-memory thread-safe SQLite test harness verifying all mandatory business rules |
 
 ---
